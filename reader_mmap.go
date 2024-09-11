@@ -51,6 +51,38 @@ func Open(file string) (*Reader, error) {
 	return reader, nil
 }
 
+func OpenFile(file *os.File) (*Reader, error) {
+	stats, err := mapFile.Stat()
+	if err != nil {
+		_ = mapFile.Close()
+		return nil, err
+	}
+
+	fileSize := int(stats.Size())
+	mmap, err := mmap(int(mapFile.Fd()), fileSize)
+	if err != nil {
+		_ = mapFile.Close()
+		return nil, err
+	}
+
+	if err := mapFile.Close(); err != nil {
+		//nolint:errcheck // we prefer to return the original error
+		munmap(mmap)
+		return nil, err
+	}
+
+	reader, err := FromBytes(mmap)
+	if err != nil {
+		//nolint:errcheck // we prefer to return the original error
+		munmap(mmap)
+		return nil, err
+	}
+
+	reader.hasMappedFile = true
+	runtime.SetFinalizer(reader, (*Reader).Close)
+	return reader, nil
+}
+
 // Close returns the resources used by the database to the system.
 func (r *Reader) Close() error {
 	var err error
