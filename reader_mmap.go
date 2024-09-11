@@ -4,6 +4,7 @@
 package maxminddb
 
 import (
+	"io/fs"
 	"os"
 	"runtime"
 )
@@ -51,7 +52,7 @@ func Open(file string) (*Reader, error) {
 	return reader, nil
 }
 
-func OpenFile(mapFile *fs.File) (*Reader, error) {
+func OpenFile(mapFile fs.File) (*Reader, error) {
 	stats, err := mapFile.Stat()
 	if err != nil {
 		_ = mapFile.Close()
