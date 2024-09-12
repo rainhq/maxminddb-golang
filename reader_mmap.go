@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"os"
 	"runtime"
 )
 
@@ -26,14 +25,6 @@ func Open(file fs.File) (*Reader, error) {
 
 	var mmap []byte
 	var hasMappedFile bool
-
-	// Try to use mmap if the file implements *os.File
-	if osFile, ok := file.(*os.File); ok {
-		mmap, err = mmap(int(osFile.Fd()), fileSize)
-		if err == nil {
-			hasMappedFile = true
-		}
-	}
 
 	// If mmap failed or wasn't possible, read the entire file
 	if mmap == nil {
