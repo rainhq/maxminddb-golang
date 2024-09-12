@@ -4,6 +4,7 @@
 package maxminddb
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
 	"runtime"
@@ -14,61 +15,22 @@ import (
 // on supported platforms. On platforms without memory map support, such
 // as WebAssembly or Google App Engine, the database is loaded into memory.
 // Use the Close method on the Reader object to return the resources to the system.
-func Open(file string) (*Reader, error) {
-	mapFile, err := os.Open(file)
+func Open(file fs.File) (*Reader, error) {
+	stats, err := file.Stat()
 	if err != nil {
-		_ = mapFile.Close()
-		return nil, err
-	}
-
-	stats, err := mapFile.Stat()
-	if err != nil {
-		_ = mapFile.Close()
 		return nil, err
 	}
 
 	fileSize := int(stats.Size())
-	mmap, err := mmap(int(mapFile.Fd()), fileSize)
+
+	// Check if the file implements os.File to get the file descriptor
+	osFile, ok := file.(*os.File)
+	if !ok {
+		return nil, fmt.Errorf("file does not implement *os.File, cannot mmap")
+	}
+
+	mmap, err := mmap(int(osFile.Fd()), fileSize)
 	if err != nil {
-		_ = mapFile.Close()
-		return nil, err
-	}
-
-	if err := mapFile.Close(); err != nil {
-		//nolint:errcheck // we prefer to return the original error
-		munmap(mmap)
-		return nil, err
-	}
-
-	reader, err := FromBytes(mmap)
-	if err != nil {
-		//nolint:errcheck // we prefer to return the original error
-		munmap(mmap)
-		return nil, err
-	}
-
-	reader.hasMappedFile = true
-	runtime.SetFinalizer(reader, (*Reader).Close)
-	return reader, nil
-}
-
-func OpenFile(mapFile fs.File) (*Reader, error) {
-	stats, err := mapFile.Stat()
-	if err != nil {
-		_ = mapFile.Close()
-		return nil, err
-	}
-
-	fileSize := int(stats.Size())
-	mmap, err := mmap(int(mapFile.Fd()), fileSize)
-	if err != nil {
-		_ = mapFile.Close()
-		return nil, err
-	}
-
-	if err := mapFile.Close(); err != nil {
-		//nolint:errcheck // we prefer to return the original error
-		munmap(mmap)
 		return nil, err
 	}
 
