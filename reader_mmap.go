@@ -5,6 +5,7 @@ package maxminddb
 
 import (
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"runtime"
@@ -18,31 +19,44 @@ import (
 func Open(file fs.File) (*Reader, error) {
 	stats, err := file.Stat()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get file stats: %w", err)
 	}
 
 	fileSize := int(stats.Size())
 
-	// Check if the file implements os.File to get the file descriptor
-	osFile, ok := file.(*os.File)
-	if !ok {
-		return nil, fmt.Errorf("file does not implement *os.File, cannot mmap")
+	var mmap []byte
+	var hasMappedFile bool
+
+	// Try to use mmap if the file implements *os.File
+	if osFile, ok := file.(*os.File); ok {
+		mmap, err = mmap(int(osFile.Fd()), fileSize)
+		if err == nil {
+			hasMappedFile = true
+		}
 	}
 
-	mmap, err := mmap(int(osFile.Fd()), fileSize)
-	if err != nil {
-		return nil, err
+	// If mmap failed or wasn't possible, read the entire file
+	if mmap == nil {
+		mmap = make([]byte, fileSize)
+		_, err = io.ReadFull(file, mmap)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read file: %w", err)
+		}
 	}
 
 	reader, err := FromBytes(mmap)
 	if err != nil {
-		//nolint:errcheck // we prefer to return the original error
-		munmap(mmap)
-		return nil, err
+		if hasMappedFile {
+			//nolint:errcheck // we prefer to return the original error
+			munmap(mmap)
+		}
+		return nil, fmt.Errorf("failed to create reader from bytes: %w", err)
 	}
 
-	reader.hasMappedFile = true
-	runtime.SetFinalizer(reader, (*Reader).Close)
+	reader.hasMappedFile = hasMappedFile
+	if hasMappedFile {
+		runtime.SetFinalizer(reader, (*Reader).Close)
+	}
 	return reader, nil
 }
 
